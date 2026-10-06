@@ -1,0 +1,22 @@
+{
+  "name": "realtime-auction-microservices",
+  "version": "1.0.0",
+  "description": "Production-ready Real-Time Auction Platform using microservices and event-driven architecture",
+  "scripts": {
+    "install:all": "npm --prefix auth-service install && npm --prefix auction-service install && npm --prefix bidding-service install && npm --prefix notification-service install && npm --prefix api-gateway install && npm --prefix tests install",
+    "test:unit": "node auth-service/test.js && node auction-service/test.js && node bidding-service/test.js && node notification-service/test.js && node api-gateway/test.js",
+    "test:integration": "node tests/integration.test.js",
+    "test": "npm run test:unit && npm run test:integration"
+  },
+  "keywords": [
+    "microservices",
+    "rabbitmq",
+    "websocket",
+    "realtime",
+    "auction",
+    "postgresql",
+    "docker"
+  ],
+  "author": "",
+  "license": "MIT"
+}

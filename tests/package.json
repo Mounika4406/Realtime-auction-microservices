@@ -1,0 +1,19 @@
+{
+  "name": "auction-tests",
+  "version": "1.0.0",
+  "description": "Integration and specification test suite for real-time auction microservices",
+  "main": "integration.test.js",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node integration.test.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "http-proxy": "^1.18.1",
+    "jsonwebtoken": "^9.0.2",
+    "realtime-auction-microservices": "file:..",
+    "ws": "^8.18.0"
+  }
+}

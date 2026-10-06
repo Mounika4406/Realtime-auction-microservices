@@ -1,0 +1,205 @@
+services:
+  # ==========================================
+  # Core Infrastructure Backing Services
+  # ==========================================
+  postgres-auth:
+    image: postgres:15-alpine
+    container_name: postgres-auth
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: db_auth
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./seeds/auth:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d db_auth"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  postgres-auction:
+    image: postgres:15-alpine
+    container_name: postgres-auction
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: db_auction
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./seeds/auction:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d db_auction"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  postgres-notification:
+    image: postgres:15-alpine
+    container_name: postgres-notification
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: db_notification
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./seeds/notification:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d db_notification"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+
+  # ==========================================
+  # Domain Microservices
+  # ==========================================
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: auth-service
+    environment:
+      AUTH_SERVICE_PORT: 8001
+      AUTH_DATABASE_URL: postgresql://postgres:postgres@postgres-auth:5432/db_auth
+      JWT_SECRET: ${JWT_SECRET:-super_secret_auction_jwt_token_key_2026!}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres-auth:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8001/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  auction-service:
+    build:
+      context: ./auction-service
+      dockerfile: Dockerfile
+    container_name: auction-service
+    environment:
+      AUCTION_SERVICE_PORT: 8002
+      AUCTION_DATABASE_URL: postgresql://postgres:postgres@postgres-auction:5432/db_auction
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      JWT_SECRET: ${JWT_SECRET:-super_secret_auction_jwt_token_key_2026!}
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres-auction:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8002/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  bidding-service:
+    build:
+      context: ./bidding-service
+      dockerfile: Dockerfile
+    container_name: bidding-service
+    environment:
+      BIDDING_SERVICE_PORT: 8003
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      JWT_SECRET: ${JWT_SECRET:-super_secret_auction_jwt_token_key_2026!}
+    ports:
+      - "8003:8003"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8003/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: notification-service
+    environment:
+      NOTIFICATION_SERVICE_PORT: 8004
+      NOTIFICATION_DATABASE_URL: postgresql://postgres:postgres@postgres-notification:5432/db_notification
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      JWT_SECRET: ${JWT_SECRET:-super_secret_auction_jwt_token_key_2026!}
+    ports:
+      - "8004:8004"
+    depends_on:
+      postgres-notification:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8004/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  # ==========================================
+  # Edge API Gateway
+  # ==========================================
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    environment:
+      API_GATEWAY_PORT: ${API_GATEWAY_PORT:-8000}
+      JWT_SECRET: ${JWT_SECRET:-super_secret_auction_jwt_token_key_2026!}
+      AUTH_SERVICE_URL: http://auth-service:8001
+      AUCTION_SERVICE_URL: http://auction-service:8002
+      BIDDING_SERVICE_URL: http://bidding-service:8003
+      NOTIFICATION_SERVICE_URL: http://notification-service:8004
+    ports:
+      - "${API_GATEWAY_PORT:-8000}:8000"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      auction-service:
+        condition: service_healthy
+      bidding-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
